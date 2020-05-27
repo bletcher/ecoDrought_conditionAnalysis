@@ -1,15 +1,21 @@
 ---
 title: "Condition anaylsis"
-output: html_document
+output:
+  html_document:
+    code_folding: hide
 ---
 
+Running lm(weight ~ length + ...) for now for speed to get a feel for how slopes of the length/weight relationship vary across species and other variables. Will likely move to RE models next.
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, tidy = TRUE)
 ```
 
-```{r load libraries, echo = FALSE}
+```{r load libraries, echo = FALSE, message = FALSE}
 library(tidyverse)
 library(lme4)
+library(broom)
+library(kableExtra)
 ```
 
 If newData, then will load raw files, parse, filter and save as 'dat'
@@ -74,13 +80,14 @@ if(newData) {
   
 ```
 
-```{r load data}
+```{r load data if no new data}
 if(!newData){
   load(paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/Size_inputs_", date,"/dat.R"))
   speciesList <- unique(dat$species)
 }
 ```
 
+## Species differences
 Species have different LW relationships.
 No random effects yet - lmer takes a long time to run (may try bam, https://m-clark.github.io/posts/2019-10-20-big-mixed-models/)
 ```{r species effect on LW relationship?}
@@ -99,32 +106,180 @@ modSpp1 <- lm(log10Weight ~ log10Length * species, data = dat)
 
 AIC(modSpp0, modSpp1)
 # species have different slopes and intercepts
-anova(modSpp1)
-summary(modSpp1)
+kable(anova(modSpp1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modSpp1), digits = 3) %>% kable_styling(font_size = 12) %>% kable_styling(font_size = 12)
 ```
 
+## Lake/stream differences
 LW relationships differ between lakes and streams. Intercepts are higher and slopes smaller in streams compared to lakes. Except for Rainbow Trout, which has opposite pattern
 ```{r lake vs. stream}
 
 modLS1 <- lm(log10Weight ~ log10Length * species * site_type, data = dat)
 
 AIC(modSpp1, modLS1)
-anova(modLS1)
-summary(modLS1)
+kable(anova(modLS1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modLS1), digits = 3) %>% kable_styling(font_size = 12) 
 ```
 
-Stream order or drainage area effect?
-```{r stream order effect}
+## Stream order
+Mixed affects among species
+```{r stream order for streams}
+
+modSO0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modSO1 <- lm(log10Weight ~ log10Length * species * Str_Order, data = dat %>% filter(site_type == "stream"))
+
+AIC(modSO0, modSO1)
+kable(anova(modSO1)) %>% kable_styling(font_size = 12) 
+#summary(modSO1)
+
+kable(tidy(modSO1), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+
+## Drainage area - stream
+Drainage area effect seems to only affect Bull Trout LW relationship. Increase in slope with drainage area for Bull Trout.
+```{r drainage area effect streams}
 
 modDA0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
 modDA1 <- lm(log10Weight ~ log10Length * species * drain_area_km2, data = dat %>% filter(site_type == "stream"))
 
 AIC(modDA0, modDA1)
-anova(modDA1)
-summary(modDA1)
+kable(anova(modDA1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modDA1), digits = 3) %>% kable_styling(font_size = 12)
 ```
 
-Lake size effect?
-Temp and flow effects?
+## Drainage area - Lake
+```{r drainage area effect Lakes}
 
+modDAL0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "Lake"))
+modDAL1 <- lm(log10Weight ~ log10Length * species * drain_area_km2, data = dat %>% filter(site_type == "Lake"))
+
+AIC(modDAL0, modDAL1)
+kable(anova(modDAL1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modDAL1), digits = 3) %>% kable_styling(font_size = 12)
+
+```
+
+## Distance to lake or stream
+Smaller slopes for most species as f(distance to lake)
+```{r distance to lake for streams}
+
+modKMLake0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modKMLake1 <- lm(log10Weight ~ log10Length * species * KM_Lake, data = dat %>% filter(site_type == "stream"))
+
+AIC(modKMLake0, modKMLake1)
+kable(anova(modKMLake1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modKMLake1), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+## Distance to 5th order river
+Mixed effect on slope among species. Neg effect on slope for Bull Trout
+```{r distance to 5th order river for streams}
+
+modKM50 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modKM51 <- lm(log10Weight ~ log10Length * species * KM_5th, data = dat %>% filter(site_type == "stream"))
+
+AIC(modKM50, modKM51)
+kable(anova(modKM51)) %>% kable_styling(font_size = 12) 
+kable(tidy(modKM51), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+## Spring flow effects
+Spring Flow increases slope for all species except CR cuts
+```{r spring flow effects for streams}
+
+modSF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modSF1 <- lm(log10Weight ~ log10Length * species * springF, data = dat %>% filter(site_type == "stream"))
+
+AIC(modSF0, modSF1)
+kable(anova(modSF1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modSF1), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+
+## Spring temp effects
+Spring temp increases slope for most species
+```{r spring temp effects for streams}
+
+modST0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modST1 <- lm(log10Weight ~ log10Length * species * springT, data = dat %>% filter(site_type == "stream"))
+
+AIC(modST0, modST1)
+kable(anova(modST1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modST1), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+## Summer flow effects
+Summer Flow increases slope for all species except CR cuts
+```{r summer flow effects for streams}
+
+modSuF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modSuF1 <- lm(log10Weight ~ log10Length * species * summerF, data = dat %>% filter(site_type == "stream"))
+
+AIC(modSuF0, modSuF1)
+kable(anova(modSuF1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modSuF1), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+
+## Summer temp effects
+Summer temp increases slope for most species
+```{r summer temp effects for streams}
+
+modSuT0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modSuT1 <- lm(log10Weight ~ log10Length * species * summerT, data = dat %>% filter(site_type == "stream"))
+
+AIC(modSuT0, modSuT1)
+kable(anova(modSuT1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modSuT1), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+## Autumn flow effects
+Autumn Flow increases LW slope for all species except CR cuts 
+```{r autumn flow effects for streams}
+
+modAF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modAF1 <- lm(log10Weight ~ log10Length * species * autumnF, data = dat %>% filter(site_type == "stream"))
+
+AIC(modAF0, modAF1)
+kable(anova(modAF1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modAF1), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+## Autumn temp effects
+Autumn temp *not* significant
+```{r autumn temp effects for streams}
+
+modAT0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modAT1 <- lm(log10Weight ~ log10Length * species * autumnT, data = dat %>% filter(site_type == "stream"))
+
+AIC(modAT0, modAT1)
+kable(anova(modAT1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modAT1), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+## Spring temp * flow effects
+Strong negative flow * temp interaction for all species
+```{r spring temp*flow effects for streams}
+
+modSpTF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modSpTF1 <- lm(log10Weight ~ log10Length * species * springT * springF, data = dat %>% filter(site_type == "stream"))
+
+AIC(modSpTF0, modSpTF1)
+kable(anova(modSpTF1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modSpTF1), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+
+## Summer temp*flow effects
+Strong negative flow*temp interaction for all species
+```{r summer temp*flow effects for streams}
+
+modSuTF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modSuTF1 <- lm(log10Weight ~ log10Length * species * summerT * summerF, data = dat %>% filter(site_type == "stream"))
+
+AIC(modSuTF0, modSuTF1)
+kable(anova(modSuTF1)) %>% kable_styling(font_size = 12) 
+kable(tidy(modSuTF1), digits = 3) %>% kable_styling(font_size = 12)
+```
 
