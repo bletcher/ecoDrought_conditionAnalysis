@@ -1,0 +1,130 @@
+---
+title: "Condition anaylsis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libraries, echo = FALSE}
+library(tidyverse)
+library(lme4)
+```
+
+If newData, then will load raw files, parse, filter and save as 'dat'
+```{r newData?}
+newData = FALSE
+date <- 'May27' #suffix for data subdriectory
+```
+
+
+Only need to run this with new data - data output as 'dat'
+```{r fetch data}
+
+if(newData){
+
+  #bring in all of the fish size data
+  fish <- list.files(paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/Size_inputs_", date), pattern = "*.txt", full.names = T)
+  
+  txt_files_df <- lapply(fish, function(x) {read.table(file = x, header = T, sep =",")})
+  
+  all_fish <- do.call("rbind", lapply(txt_files_df, as.data.frame))
+  
+  ##bring in the covariate data
+  covs <- read.csv("D:/projects/ecoDrought/bodySize/All_Size_inputs/covariates_size_analysis.csv")
+  
+  #merge fish data with covariate data
+  all_fish_init<-merge(all_fish, covs, by = "RALLID")
+  
+  #Select only those fish of interest
+  
+  #species of interest AND    #get rid of weir data
+  sinc <- c("Bonneville Cutthroat Trout","Colorado River Cutthroat Trout","Redband Trout","Bull Trout","Brook Trout","Mountain Whitefish","Brown Trout","Westslope Cutthroat Trout", "Yellowstone Cutthroat Trout","Rainbow Trout")
+  
+  nw <- c("Lake","stream")
+  
+  dat <- all_fish_init %>%
+    filter(species %in% sinc, site_type %in% nw,
+           !is.na(Weight), Length > 75) %>%
+    rename(weight = Weight, length = Length) %>%
+    mutate(log10Weight = log10(weight), log10Length = log10(length))
+    
+  save(dat, file =paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/Size_inputs_", date,"/dat.R"))
+  
+  rm(all_fish_init, all_fish)
+}
+```
+
+```{r raw data plots}
+
+if(newData) {
+  for(i in c(1,2,4,5,6,7,8,9)) {
+    print(i)
+    
+    ggplot(dat %>% filter(species %in% c(sinc[i])), aes(log10Length, log10Weight, color = site_type)) +
+      geom_point(alpha = 0.1) +
+      geom_smooth(method = 'lm') +
+      facet_wrap(~ species)
+    
+    ggsave(paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/ecoDrought_conditionAnalysis/charts/LW_",sinc[i],".png"))
+  }
+}
+  
+  
+```
+
+```{r load data}
+if(!newData){
+  load(paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/Size_inputs_", date,"/dat.R"))
+  speciesList <- unique(dat$species)
+}
+```
+
+Species have different LW relationships.
+No random effects yet - lmer takes a long time to run (may try bam, https://m-clark.github.io/posts/2019-10-20-big-mixed-models/)
+```{r species effect on LW relationship?}
+if(newData) {
+    ggplot(dat, aes(log10Length, log10Weight, color = species)) +
+    geom_point(alpha = 0.1) +
+    geom_smooth(method = 'lm') 
+   
+    ggsave(paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/ecoDrought_conditionAnalysis/charts/LWbySpecies.png"))
+}
+
+#modSpp1 <- lmer(log10Weight ~ log10Length * species + 1|HUC8_Name, data = dat) very slow
+modSpp0 <- lm(log10Weight ~ log10Length, data = dat)
+modSpp1 <- lm(log10Weight ~ log10Length * species, data = dat)
+
+
+AIC(modSpp0, modSpp1)
+# species have different slopes and intercepts
+anova(modSpp1)
+summary(modSpp1)
+```
+
+LW relationships differ between lakes and streams. Intercepts are higher and slopes smaller in streams compared to lakes. Except for Rainbow Trout, which has opposite pattern
+```{r lake vs. stream}
+
+modLS1 <- lm(log10Weight ~ log10Length * species * site_type, data = dat)
+
+AIC(modSpp1, modLS1)
+anova(modLS1)
+summary(modLS1)
+```
+
+Stream order or drainage area effect?
+```{r stream order effect}
+
+modDA0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
+modDA1 <- lm(log10Weight ~ log10Length * species * drain_area_km2, data = dat %>% filter(site_type == "stream"))
+
+AIC(modDA0, modDA1)
+anova(modDA1)
+summary(modDA1)
+```
+
+Lake size effect?
+Temp and flow effects?
+
+
