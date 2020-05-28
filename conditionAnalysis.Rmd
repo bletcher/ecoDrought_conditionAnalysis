@@ -16,6 +16,10 @@ library(tidyverse)
 library(lme4)
 library(broom)
 library(kableExtra)
+library(modelr)
+library(data.table)
+library(rlang)
+library(tidyfast)
 ```
 
 If newData, then will load raw files, parse, filter and save as 'dat'
@@ -50,15 +54,29 @@ if(newData){
   
   nw <- c("Lake","stream")
   
-  dat <- all_fish_init %>%
+  dat0 <- all_fish_init %>%
     filter(species %in% sinc, site_type %in% nw,
            !is.na(Weight), Length > 75) %>%
     rename(weight = Weight, length = Length) %>%
     mutate(log10Weight = log10(weight), log10Length = log10(length))
-    
+  
+  # Species-specific LWE regressions so we can add residuals to dataset
+  lwModel <- function(df) {
+    lm(log10Weight ~ log10Length, data = df)
+  }
+  
+  datBySpecies <- dat0 %>%
+    group_by(species) %>% 
+    nest() %>%
+    mutate(model = map(data, lwModel))
+           
+  datBySpecies <- datBySpecies %>% mutate(resids = map2(data, model, add_residuals))
+
+  dat <- dt_unnest(datBySpecies, resids) # unnest() from tidyverse is so slow it never finishes
+  
   save(dat, file =paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/Size_inputs_", date,"/dat.R"))
   
-  rm(all_fish_init, all_fish)
+  rm(all_fish_init, all_fish, dat0)
 }
 ```
 
@@ -88,12 +106,12 @@ if(!newData){
 ```
 
 ## Species differences
-Species have different LW relationships.
+Species have significantly different LW relationships, although LW regression lines overlap considerably.
 No random effects yet - lmer takes a long time to run (may try bam, https://m-clark.github.io/posts/2019-10-20-big-mixed-models/)
 ```{r species effect on LW relationship?}
 if(newData) {
     ggplot(dat, aes(log10Length, log10Weight, color = species)) +
-    geom_point(alpha = 0.1) +
+    geom_point(alpha = 0.01) +
     geom_smooth(method = 'lm') 
    
     ggsave(paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/ecoDrought_conditionAnalysis/charts/LWbySpecies.png"))
@@ -281,5 +299,11 @@ modSuTF1 <- lm(log10Weight ~ log10Length * species * summerT * summerF, data = d
 AIC(modSuTF0, modSuTF1)
 kable(anova(modSuTF1)) %>% kable_styling(font_size = 12) 
 kable(tidy(modSuTF1), digits = 3) %>% kable_styling(font_size = 12)
+```
+
+***
+# Residuals section
+```{r}
+
 ```
 
