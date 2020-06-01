@@ -1,3 +1,7 @@
+z-score T and F
+resids by location
+
+
 ---
 title: "Condition anaylsis"
 output:
@@ -8,7 +12,7 @@ output:
 Running lm(weight ~ length + ...) for now for speed to get a feel for how slopes of the length/weight relationship vary across species and other variables. Will likely move to RE models next.
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, tidy = TRUE)
+knitr::opts_chunk$set(echo = TRUE, tidy = TRUE) #, cache = TRUE)
 ```
 
 ```{r load libraries, echo = FALSE, message = FALSE}
@@ -23,16 +27,15 @@ library(tidyfast)
 ```
 
 If newData, then will load raw files, parse, filter and save as 'dat'
-```{r newData?}
+```{r newData}
 newData = FALSE
-date <- 'May27' #suffix for data subdriectory
+date <- 'May27' #suffix for data subdirectory
 ```
 
 
 Only need to run this with new data - data output as 'dat'
 ```{r fetch data}
-
-if(newData){
+if(newData) {
 
   #bring in all of the fish size data
   fish <- list.files(paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/Size_inputs_", date), pattern = "*.txt", full.names = T)
@@ -49,9 +52,10 @@ if(newData){
   
   #Select only those fish of interest
   
-  #species of interest AND    #get rid of weir data
+  #species of interest    
   sinc <- c("Bonneville Cutthroat Trout","Colorado River Cutthroat Trout","Redband Trout","Bull Trout","Brook Trout","Mountain Whitefish","Brown Trout","Westslope Cutthroat Trout", "Yellowstone Cutthroat Trout","Rainbow Trout")
   
+  #exclude weir data
   nw <- c("Lake","stream")
   
   dat0 <- all_fish_init %>%
@@ -73,6 +77,7 @@ if(newData){
   datBySpecies <- datBySpecies %>% mutate(resids = map2(data, model, add_residuals))
 
   dat <- dt_unnest(datBySpecies, resids) # unnest() from tidyverse is so slow it never finishes
+  speciesList <- unique(dat$species)
   
   save(dat, file =paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/Size_inputs_", date,"/dat.R"))
   
@@ -81,17 +86,22 @@ if(newData){
 ```
 
 ```{r raw data plots}
-
 if(newData) {
   for(i in c(1,2,4,5,6,7,8,9)) {
     print(i)
     
-    ggplot(dat %>% filter(species %in% c(sinc[i])), aes(log10Length, log10Weight, color = site_type)) +
+    ggplot(dat %>% filter(species %in% c(sinc[i])), aes(log10Length, log10Weight, color = Lake)) +
       geom_point(alpha = 0.1) +
       geom_smooth(method = 'lm') +
       facet_wrap(~ species)
     
     ggsave(paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/ecoDrought_conditionAnalysis/charts/LW_",sinc[i],".png"))
+    
+    ggplot(dat%>%filter(species == "Brown Trout"), aes(log10Length, log10Weight, color = Location)) +
+      #geom_point(alpha = 0.1) +
+      geom_smooth(aes(linetype = factor(Lake)), method = 'lm') +
+      facet_wrap(~ species)
+    
   }
 }
   
@@ -105,10 +115,16 @@ if(!newData){
 }
 ```
 
+
+***
+# LW relationship analysis section
+***
+
 ## Species differences
 Species have significantly different LW relationships, although LW regression lines overlap considerably.
 No random effects yet - lmer takes a long time to run (may try bam, https://m-clark.github.io/posts/2019-10-20-big-mixed-models/)
 ```{r species effect on LW relationship?}
+
 if(newData) {
     ggplot(dat, aes(log10Length, log10Weight, color = species)) +
     geom_point(alpha = 0.01) +
@@ -132,7 +148,7 @@ kable(tidy(modSpp1), digits = 3) %>% kable_styling(font_size = 12) %>% kable_sty
 LW relationships differ between lakes and streams. Intercepts are higher and slopes smaller in streams compared to lakes. Except for Rainbow Trout, which has opposite pattern
 ```{r lake vs. stream}
 
-modLS1 <- lm(log10Weight ~ log10Length * species * site_type, data = dat)
+modLS1 <- lm(log10Weight ~ log10Length * species * Lake, data = dat)
 
 AIC(modSpp1, modLS1)
 kable(anova(modLS1)) %>% kable_styling(font_size = 12) 
@@ -143,8 +159,8 @@ kable(tidy(modLS1), digits = 3) %>% kable_styling(font_size = 12)
 Mixed affects among species
 ```{r stream order for streams}
 
-modSO0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modSO1 <- lm(log10Weight ~ log10Length * species * Str_Order, data = dat %>% filter(site_type == "stream"))
+modSO0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modSO1 <- lm(log10Weight ~ log10Length * species * Str_Order, data = dat %>% filter(Lake == 0))
 
 AIC(modSO0, modSO1)
 kable(anova(modSO1)) %>% kable_styling(font_size = 12) 
@@ -158,8 +174,8 @@ kable(tidy(modSO1), digits = 3) %>% kable_styling(font_size = 12)
 Drainage area effect seems to only affect Bull Trout LW relationship. Increase in slope with drainage area for Bull Trout.
 ```{r drainage area effect streams}
 
-modDA0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modDA1 <- lm(log10Weight ~ log10Length * species * drain_area_km2, data = dat %>% filter(site_type == "stream"))
+modDA0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modDA1 <- lm(log10Weight ~ log10Length * species * drain_area_km2, data = dat %>% filter(Lake == 0))
 
 AIC(modDA0, modDA1)
 kable(anova(modDA1)) %>% kable_styling(font_size = 12) 
@@ -169,8 +185,8 @@ kable(tidy(modDA1), digits = 3) %>% kable_styling(font_size = 12)
 ## Drainage area - Lake
 ```{r drainage area effect Lakes}
 
-modDAL0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "Lake"))
-modDAL1 <- lm(log10Weight ~ log10Length * species * drain_area_km2, data = dat %>% filter(site_type == "Lake"))
+modDAL0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modDAL1 <- lm(log10Weight ~ log10Length * species * drain_area_km2, data = dat %>% filter(Lake == 0))
 
 AIC(modDAL0, modDAL1)
 kable(anova(modDAL1)) %>% kable_styling(font_size = 12) 
@@ -182,8 +198,8 @@ kable(tidy(modDAL1), digits = 3) %>% kable_styling(font_size = 12)
 Smaller slopes for most species as f(distance to lake)
 ```{r distance to lake for streams}
 
-modKMLake0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modKMLake1 <- lm(log10Weight ~ log10Length * species * KM_Lake, data = dat %>% filter(site_type == "stream"))
+modKMLake0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modKMLake1 <- lm(log10Weight ~ log10Length * species * KM_Lake, data = dat %>% filter(Lake == 0))
 
 AIC(modKMLake0, modKMLake1)
 kable(anova(modKMLake1)) %>% kable_styling(font_size = 12) 
@@ -194,8 +210,8 @@ kable(tidy(modKMLake1), digits = 3) %>% kable_styling(font_size = 12)
 Mixed effect on slope among species. Neg effect on slope for Bull Trout
 ```{r distance to 5th order river for streams}
 
-modKM50 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modKM51 <- lm(log10Weight ~ log10Length * species * KM_5th, data = dat %>% filter(site_type == "stream"))
+modKM50 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modKM51 <- lm(log10Weight ~ log10Length * species * KM_5th, data = dat %>% filter(Lake == 0))
 
 AIC(modKM50, modKM51)
 kable(anova(modKM51)) %>% kable_styling(font_size = 12) 
@@ -206,8 +222,8 @@ kable(tidy(modKM51), digits = 3) %>% kable_styling(font_size = 12)
 Spring Flow increases slope for all species except CR cuts
 ```{r spring flow effects for streams}
 
-modSF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modSF1 <- lm(log10Weight ~ log10Length * species * springF, data = dat %>% filter(site_type == "stream"))
+modSF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modSF1 <- lm(log10Weight ~ log10Length * species * springF, data = dat %>% filter(Lake == 0))
 
 AIC(modSF0, modSF1)
 kable(anova(modSF1)) %>% kable_styling(font_size = 12) 
@@ -219,8 +235,8 @@ kable(tidy(modSF1), digits = 3) %>% kable_styling(font_size = 12)
 Spring temp increases slope for most species
 ```{r spring temp effects for streams}
 
-modST0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modST1 <- lm(log10Weight ~ log10Length * species * springT, data = dat %>% filter(site_type == "stream"))
+modST0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modST1 <- lm(log10Weight ~ log10Length * species * springT, data = dat %>% filter(Lake == 0))
 
 AIC(modST0, modST1)
 kable(anova(modST1)) %>% kable_styling(font_size = 12) 
@@ -231,8 +247,8 @@ kable(tidy(modST1), digits = 3) %>% kable_styling(font_size = 12)
 Summer Flow increases slope for all species except CR cuts
 ```{r summer flow effects for streams}
 
-modSuF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modSuF1 <- lm(log10Weight ~ log10Length * species * summerF, data = dat %>% filter(site_type == "stream"))
+modSuF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modSuF1 <- lm(log10Weight ~ log10Length * species * summerF, data = dat %>% filter(Lake == 0))
 
 AIC(modSuF0, modSuF1)
 kable(anova(modSuF1)) %>% kable_styling(font_size = 12) 
@@ -244,8 +260,8 @@ kable(tidy(modSuF1), digits = 3) %>% kable_styling(font_size = 12)
 Summer temp increases slope for most species
 ```{r summer temp effects for streams}
 
-modSuT0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modSuT1 <- lm(log10Weight ~ log10Length * species * summerT, data = dat %>% filter(site_type == "stream"))
+modSuT0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modSuT1 <- lm(log10Weight ~ log10Length * species * summerT, data = dat %>% filter(Lake == 0))
 
 AIC(modSuT0, modSuT1)
 kable(anova(modSuT1)) %>% kable_styling(font_size = 12) 
@@ -256,8 +272,8 @@ kable(tidy(modSuT1), digits = 3) %>% kable_styling(font_size = 12)
 Autumn Flow increases LW slope for all species except CR cuts 
 ```{r autumn flow effects for streams}
 
-modAF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modAF1 <- lm(log10Weight ~ log10Length * species * autumnF, data = dat %>% filter(site_type == "stream"))
+modAF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modAF1 <- lm(log10Weight ~ log10Length * species * autumnF, data = dat %>% filter(Lake == 0))
 
 AIC(modAF0, modAF1)
 kable(anova(modAF1)) %>% kable_styling(font_size = 12) 
@@ -268,8 +284,8 @@ kable(tidy(modAF1), digits = 3) %>% kable_styling(font_size = 12)
 Autumn temp *not* significant
 ```{r autumn temp effects for streams}
 
-modAT0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modAT1 <- lm(log10Weight ~ log10Length * species * autumnT, data = dat %>% filter(site_type == "stream"))
+modAT0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modAT1 <- lm(log10Weight ~ log10Length * species * autumnT, data = dat %>% filter(Lake == 0))
 
 AIC(modAT0, modAT1)
 kable(anova(modAT1)) %>% kable_styling(font_size = 12) 
@@ -280,8 +296,8 @@ kable(tidy(modAT1), digits = 3) %>% kable_styling(font_size = 12)
 Strong negative flow * temp interaction for all species
 ```{r spring temp*flow effects for streams}
 
-modSpTF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modSpTF1 <- lm(log10Weight ~ log10Length * species * springT * springF, data = dat %>% filter(site_type == "stream"))
+modSpTF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modSpTF1 <- lm(log10Weight ~ log10Length * species * springT * springF, data = dat %>% filter(Lake == 0))
 
 AIC(modSpTF0, modSpTF1)
 kable(anova(modSpTF1)) %>% kable_styling(font_size = 12) 
@@ -293,8 +309,8 @@ kable(tidy(modSpTF1), digits = 3) %>% kable_styling(font_size = 12)
 Strong negative flow*temp interaction for all species
 ```{r summer temp*flow effects for streams}
 
-modSuTF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(site_type == "stream"))
-modSuTF1 <- lm(log10Weight ~ log10Length * species * summerT * summerF, data = dat %>% filter(site_type == "stream"))
+modSuTF0 <- lm(log10Weight ~ log10Length * species, data = dat %>% filter(Lake == 0))
+modSuTF1 <- lm(log10Weight ~ log10Length * species * summerT * summerF, data = dat %>% filter(Lake == 0))
 
 AIC(modSuTF0, modSuTF1)
 kable(anova(modSuTF1)) %>% kable_styling(font_size = 12) 
@@ -302,8 +318,167 @@ kable(tidy(modSuTF1), digits = 3) %>% kable_styling(font_size = 12)
 ```
 
 ***
-# Residuals section
+# Residual analysis section
+***
 ```{r}
+
+ggplot(dat %>% filter(species == speciesList[1]), aes(x = resid, y = ..ncount.., color = HUC12_NAME)) +
+  geom_freqpoly(nbin = 50, show.legend = FALSE) +
+  geom_vline(xintercept = 0) +
+  facet_wrap(~HUC8_Name)
+
+#  facet_wrap(~HUC12_NAME)
+
+ggplot(dat, aes(factor(Lake), resid)) +
+  geom_boxplot(outlier.shape = NA) +
+  ylim(c(-0.25, 0.25)) +
+  facet_wrap(~species)
+
+ggplot(dat, aes(factor(Str_Order), resid)) +
+  geom_boxplot(outlier.shape = NA) +
+  ylim(c(-0.25, 0.25)) +
+  facet_wrap(~species) 
+
+glance(lm(resid ~ drain_area_km2 * species, data = dat %>% filter(Lake == 0)))
+ggplot(dat %>% filter(Lake == 0), aes(drain_area_km2, resid)) +
+  #geom_point(alpha = 0.01) +
+  geom_smooth(method = 'lm') +
+  facet_wrap(~species)
+
+glance(lm(resid ~ KM_Lake * species, data = dat %>% filter(Lake == 0)))
+ggplot(dat %>% filter(Lake == 0), aes(KM_Lake, resid)) +
+  #geom_point(alpha = 0.01) +
+  geom_smooth(method = 'lm') +
+  facet_wrap(~species)
+
+glance(lm(resid ~ KM_5th * species, data = dat %>% filter(Lake == 0)))
+ggplot(dat %>% filter(Lake == 0), aes(KM_5th, resid)) +
+  #geom_point(alpha = 0.01) +
+  geom_smooth(method = 'lm') +
+  facet_wrap(~species)
+
+glance(lm(resid ~ springF * species, data = dat %>% filter(Lake == 0)))
+ggplot(dat %>% filter(Lake == 0), aes(springF, resid)) +
+  #geom_point(alpha = 0.01) +
+  geom_smooth(method = 'lm') +
+  facet_wrap(~species)
+
+glance(lm(resid ~ springT * species, data = dat %>% filter(Lake == 0)))
+ggplot(dat %>% filter(Lake == 0), aes(springT, resid)) +
+  #geom_point(alpha = 0.01) +
+  geom_smooth(method = 'lm') +
+  facet_wrap(~species)
+
+glance(lm(resid ~ summerF * species, data = dat %>% filter(Lake == 0)))
+ggplot(dat %>% filter(Lake == 0), aes(summerF, resid)) +
+  #geom_point(alpha = 0.01) +
+  geom_smooth(method = 'lm') +
+  facet_wrap(~species)
+
+glance(lm(resid ~ summerT * species, data = dat %>% filter(Lake == 0)))
+ggplot(dat %>% filter(Lake == 0), aes(summerT, resid)) +
+  #geom_point(alpha = 0.01) +
+  geom_smooth(method = 'lm') +
+  facet_wrap(~species)
+
+glance(lm(resid ~ autumnF * species, data = dat %>% filter(Lake == 0)))
+ggplot(dat %>% filter(Lake == 0), aes(autumnF, resid)) +
+  #geom_point(alpha = 0.01) +
+  geom_smooth(method = 'lm') +
+  facet_wrap(~species)
+
+glance(lm(resid ~ autumnT * species, data = dat %>% filter(Lake == 0)))
+ggplot(dat %>% filter(Lake == 0), aes(autumnT, resid)) +
+  #geom_point(alpha = 0.01) +
+  geom_smooth(method = 'lm') +
+  facet_wrap(~species)
+
+#f*t surface?
+```
+
+```{r spatially-nested lmer by species}
+  lmerModel <- function(df) {
+    lmer(resid ~ 1 + (1|location/HUC8_Name/HUC12_NAME), data = df)
+  }
+
+# build up hierarchical random effects for each species 
+  reBySpecies <- function(mod){
+    re <- as.data.frame(ranef(mod))
+   
+    re12 <- re %>%
+      filter(grpvar == 'HUC12_NAME:(HUC8_Name:location)') %>%
+      mutate(huc12 = str_split(grp, ":", simplify = TRUE)[,1],
+             huc8 = str_split(grp, ":", simplify = TRUE)[,2],
+             loc = str_split(grp, ":", simplify = TRUE)[,3]) %>%
+      rename(condval12 = condval)
+  
+    re8 <- re %>%
+      filter(grpvar == 'HUC8_Name:location') %>%
+      mutate(loc = str_split(grp, ":", simplify = TRUE)[,2],
+             huc8 = str_split(grp, ":", simplify = TRUE)[,1]) %>%
+      rename(condval8 = condval)
+    
+    reLoc <- re %>%
+      filter(grpvar == 'location') %>%
+      mutate(loc = grp) %>%
+      rename(condvalLoc = condval)%>% 
+      select(condvalLoc, loc)
+    
+    reAll1 <- left_join(re8, reLoc) %>% select(condval8, loc, huc8, condvalLoc)
+    reAll <- left_join(re12, reAll1) %>% arrange(loc, huc8, huc12)
+    
+    ggplot(reAll, aes(condval12, huc12)) +
+      geom_point(color = 'orange') +
+      geom_point(aes(condval8, huc12), color = 'blue') +
+      geom_point(aes(condvalLoc, huc12, shape = factor(loc)), color = 'black') +
+      geom_vline(xintercept = 0) +
+      scale_y_discrete(guide = guide_none(title = NULL)) +
+      scale_x_continuous("Residual from species-specific LW relationship") +
+      facet_wrap(~huc8)
+  }  
+##  
+
+
+  datBySpecies <- dat %>%
+    filter(species %in% speciesList[c(1,3,4,5,7)]) %>%
+    group_by(species) %>% 
+    nest() %>%
+    mutate(model = map(data, lmerModel)) %>%
+    mutate(charts = map(model, reBySpecies))
+
+
+
+
+## SDs of nested levels ################
+  datBySpeciesSD <- datBySpecies %>%
+    mutate(tidy = map(model, broom::tidy)) %>% 
+    unnest(tidy) %>%
+    select(species, estimate, term, group) %>%
+    filter(!term == '(Intercept)')
+  
+  ggSD <- ggplot(datBySpeciesSD, aes(species,estimate, fill = group)) +
+    geom_col(position = "dodge") +
+    scale_y_continuous("Standard deviation of nested LW residuals")
+  
+  
+  
+  
+  # some species have data for one location only #2 6 8 9
+  # Colorado River Cutthroat Trout model has singularity - ignoring for now
+  lmerModelNoLocation <- function(df) {
+    lmer(resid ~ 1 + (1|HUC8_Name/HUC12_NAME), data = df)
+  }
+  datBySpeciesNoLocation <- dat %>%
+    filter(species %in% speciesList[c(2,8,9)]) %>%
+    group_by(species) %>% 
+    nest() %>%
+    mutate(model = map(data, lmerModelNoLocation))         
+  
+  
+    
+
+
+
 
 ```
 
