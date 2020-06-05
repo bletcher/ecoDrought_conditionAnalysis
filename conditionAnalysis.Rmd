@@ -452,7 +452,11 @@ HUC12 nested within HUC8 nested within Location
       mutate(condvalLoc8 = condvalLoc + condval8,
              condvalLoc812 = condvalLoc + condval8 + condval12)
     
-    gg <- ggplot(reAll, aes(condvalLoc812, huc12)) +
+    return(reAll)
+  }
+  
+  hierRECharts <- function(d, species) {
+      gg <- ggplot(d, aes(condvalLoc812, huc12)) +
       geom_point(color = '#ff9a36') +
       geom_point(aes(condvalLoc8, huc12), color = '#3f7bc4') +
       geom_point(aes(condvalLoc, huc12, shape = factor(loc)), color = '#bdb2a8') +
@@ -463,7 +467,6 @@ HUC12 nested within HUC8 nested within Location
       facet_wrap(~huc8)
     
     ggsave(paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/ecoDrought_conditionAnalysis/charts/hierResids_",species,".png"))
-    
     return(gg)
   }
   
@@ -475,14 +478,15 @@ HUC12 nested within HUC8 nested within Location
     group_by(species) %>% 
     nest() %>%
     mutate(model = map(data, lmerModel)) %>%
-    mutate(charts = map2(model, species, reBySpecies))
-
+    mutate(RE = map2(model, species, reBySpecies)) %>%
+    mutate(charts = map2(RE, species, hierRECharts))
+    
   datBySpeciesRE$charts
   
   ## SDs of nested levels ################
   datBySpeciesRESD <- datBySpeciesRE %>%
     mutate(tidy = map(model, broom::tidy)) %>% 
-    unnest(tidy) %>%
+    dt_unnest(tidy) %>%
     select(species, estimate, term, group) %>%
     filter(!term == '(Intercept)')
   
@@ -491,11 +495,39 @@ HUC12 nested within HUC8 nested within Location
     scale_y_continuous("Standard deviation of nested LW residuals")
   ggSD
   
+  ## plot RE across species
+  datBySpeciesRE_RE <- datBySpeciesRE %>%
+    dt_unnest(RE)
 
+  # by loc
+  ggplot(datBySpeciesRE_RE, aes(condvalLoc812, species)) +
+    geom_point(color = '#ff9a36', alpha = 0.2, position = position_nudge(y = 0.2)) +
+    geom_point(aes(condvalLoc8, species), color = '#3f7bc4', alpha = 0.2, position = position_nudge(y = -0.2)) +
+    geom_point(aes(condvalLoc, species), color = 'black') +
+    geom_vline(xintercept = 0) +
+    scale_x_continuous("Residual from species-specific LW relationship") +
+    facet_wrap(~loc)
+
+  # by huc8
+  nByhuc8 <- datBySpeciesRE_RE %>%
+    group_by(huc8) %>%
+    summarise(nSpp = length(unique(species)))
+  
+  datBySpeciesRE_RE_SppN <- left_join(datBySpeciesRE_RE, nByhuc8)
+  
+  ggplot(datBySpeciesRE_RE_SppN %>% filter(nSpp >1), aes(condvalLoc812, species)) +
+    geom_point(color = '#ff9a36', alpha = 0.2, position = position_nudge(y = 0.2)) +
+    geom_point(aes(condvalLoc8, species), color = '#3f7bc4', position = position_nudge(y = -0.2)) +
+    geom_point(aes(condvalLoc, species), color = 'black') +
+    geom_vline(xintercept = 0) +
+    scale_x_continuous("Residual from species-specific LW relationship") +
+    facet_wrap(loc ~ huc8, labeller = labeller(.multi_line = FALSE))
+  
 ##############################################################################  
   # some species have data for one location only #2 6 8 9
   # Colorado River Cutthroat Trout model has singularity - ignoring for now
-  ## Hierarchical graphs for huc12/huc8 
+  ## Hierarchical graphs for huc12/huc8
+  
   lmerModelNoLocation <- function(df) {
     lmer(resid ~ 1 + (1|HUC8_Name/HUC12_NAME), data = df)
   }
@@ -522,7 +554,11 @@ HUC12 nested within HUC8 nested within Location
       mutate(condval8 = condval8,
              condval812 = condval8 + condval12)
     
-    gg <- ggplot(reAll, aes(condval812, huc12)) +
+    return(reAll)
+  }
+  
+  hierREChartsNoLocation <- function(d, species) {
+    gg <- ggplot(d, aes(condval812, huc12)) +
       geom_point(color = '#ff9a36') +
       geom_point(aes(condval8, huc12), color = '#3f7bc4') +
       geom_vline(xintercept = 0) +
@@ -534,7 +570,7 @@ HUC12 nested within HUC8 nested within Location
     ggsave(paste0("D:/projects/ecoDrought/bodySize/All_Size_inputs/ecoDrought_conditionAnalysis/charts/hierResids_",species,".png"))
     
     return(gg)
-  }
+  }  
   
   # Charts of nested random effects 
   datBySpeciesRENoLocation <- dat %>%
@@ -542,14 +578,15 @@ HUC12 nested within HUC8 nested within Location
     group_by(species) %>% 
     nest() %>%
     mutate(model = map(data, lmerModelNoLocation)) %>%
-    mutate(charts = map2(model, species, reBySpecies812))
-  
+    mutate(RE = map2(model, species, reBySpecies812)) %>%
+    mutate(charts = map2(RE, species, hierREChartsNoLocation))
+    
   datBySpeciesRENoLocation$charts 
   
   ## SDs of nested levels ################
   datBySpeciesRENoLocationSD <- datBySpeciesRENoLocation %>%
     mutate(tidy = map(model, broom::tidy)) %>% 
-    unnest(tidy) %>%
+    dt_unnest(tidy) %>%
     select(species, estimate, term, group) %>%
     filter(!term == '(Intercept)')
   
@@ -558,6 +595,24 @@ HUC12 nested within HUC8 nested within Location
     scale_y_continuous("Standard deviation of nested LW residuals") 
   ggNoLocationSD 
   
+  ## plot RE across species
+  datBySpeciesRENoLocation_RE <- datBySpeciesRENoLocation %>%
+    dt_unnest(RE)
+
+  # by huc8
+  nNoLocationByhuc8 <- datBySpeciesRENoLocation_RE %>%
+    group_by(huc8) %>%
+    summarise(nSpp = length(unique(species)))
+  
+  datBySpeciesRENoLocation_RE_SppN <- left_join(datBySpeciesRENoLocation_RE, nNoLocationByhuc8)
+  
+  ggplot(datBySpeciesRENoLocation_RE_SppN %>% filter(nSpp >1), aes(condval812, species)) +
+    geom_point(color = '#ff9a36', alpha = 0.2, position = position_nudge(y = 0.2)) +
+    geom_point(aes(condval8, species), color = '#3f7bc4', position = position_nudge(y = -0.2)) +
+    geom_vline(xintercept = 0) +
+    scale_x_continuous("Residual from species-specific LW relationship") +
+    facet_wrap( ~ huc8)
+
 ```
 
 
